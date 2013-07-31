@@ -3,8 +3,10 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <map>
 
 // Boost includes
+#include <boost/assign.hpp>
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 
@@ -15,13 +17,19 @@
 #include <TFile.h>
 #include <TList.h>
 #include <TKey.h>
+#include <TTree.h>
+#include <TBranch.h>
+#include <TLeaf.h>
 
 // HDF5 includes
-#include "H5Cpp.h"
+#include <H5Cpp.h>
 
 
 // Standard namespaces
 using namespace std;
+
+// Boost namespaces
+using namespace boost::assign;
 
 // Boost namespace aliases
 namespace po = boost::program_options;
@@ -105,18 +113,105 @@ void parse_command_line_options(int argc, char * argv[])
     }
 }
 
-void walk_and_convert(TDirectory *directory, CommonFG *group)
+
+map<string, PredType> root_type_name_to_hdf5_type = 
+map_list_of
+    ("Bool_t", PredType::NATIVE_HBOOL)
+    ("Char_t", PredType::NATIVE_SCHAR)
+    ("UChar_t", PredType::NATIVE_UCHAR)
+    ("Short_t", PredType::NATIVE_INT16)
+    ("UShort_t", PredType::NATIVE_UINT16)
+    ("Int_t", PredType::NATIVE_INT32)
+    ("UInt_t", PredType::NATIVE_UINT32)
+    ("Long_t", PredType::NATIVE_INT64)
+    ("Long64_t", PredType::NATIVE_INT64)
+    ("ULong_t", PredType::NATIVE_UINT64)
+    ("ULong64_t", PredType::NATIVE_UINT64)
+    ("Float_t", PredType::NATIVE_FLOAT)
+    ("Double_t", PredType::NATIVE_DOUBLE)
+;
+
+
+void create_dataset_from_tree_in_group(TTree *tree,
+                                       CommonFG *group)
+{
+    // First, get the name for our dataset
+    string name(tree->GetName());
+    group = NULL;
+
+    // Second, we need to define the dataspace (i.e. dimensions) of the
+    // dataset, which in this case is just rank 1 with the number of
+    // entries in the TTree
+    hsize_t length = tree->GetEntries();
+    DataSpace dataspace(1, &length);
+
+    // Third, we need to construct the datatype.  To do this, we need to iterate
+    // over the branches of the TTree, figure out their type, map it to an HDF5
+    // type, and allocate a buffer to store the branch value in.  The good thing
+    // is that we can use the same buffer for SetBranchAddress and HDF5's data
+    // filling.
+    map<string, const DataType &> branch_to_hdf5_type;
+    map<string, size_t> branch_to_offset;
+
+    TIter next_branch(tree->GetListOfBranches());
+    TBranch *branch = NULL;
+    while((branch = (TBranch *)next_branch()))
+    {
+        // Grab the branch type name
+        string type_name(branch->GetLeaf(branch->GetName())->GetTypeName());
+
+        // Check the type kind
+        bool is_atomic = root_type_name_to_hdf5_type.count(type_name) == 1;
+        
+        // If this is not a handleable type, just continue
+        if(is_atomic)
+        {
+            // Grab the type
+
+        }
+        else
+        {
+            // Unhandled type
+            if(verbose)
+            {
+                cerr << "WARNING: Unhandled branch type \""
+                     << type_name
+                     << "\" - skipping."
+                     << endl;
+            }
+
+            continue;
+        }
+    }
+
+
+}
+
+
+void walk_and_convert(TDirectory *directory,
+                      CommonFG *group,
+                      unsigned depth = 0)
 {
     // Generate a list of keys in the directory
     TIter next_key(directory->GetListOfKeys());
 
     // Go through the keys, handling them by their type
-    TKey *key;
+    TKey *key = NULL;
     while((key = (TKey *)next_key()))
     {
         // Grab the object and its type
         TObject *object = key->ReadObj();
         TClass *object_type = object->IsA();
+
+        // Print information if requested
+        if(verbose)
+        {
+            for(unsigned i = 0; i < depth; i++)
+            {
+                cout << '\t';
+            }
+            cout << "Processing " << key->GetName() << endl;
+        }
 
         // Switch based on type
         if(object_type->InheritsFrom(TDirectory::Class()))
@@ -124,12 +219,27 @@ void walk_and_convert(TDirectory *directory, CommonFG *group)
             // This is a ROOT directory, so first create a corresponding HDF5
             // group and then recurse into it
             Group new_group = group->createGroup(key->GetName());
-            walk_and_convert((TDirectory *)key->ReadObj(), &new_group);
+            walk_and_convert((TDirectory *)key->ReadObj(),
+                             &new_group,
+                             depth + 1);
+        }
+        else if(object_type->InheritsFrom(TTree::Class()))
+        {
+            // This is a ROOT tree, so we need to create a new HDF5 dataset with
+            // custom type matching the TTree branches, and then copy all the
+            // data into it
+            create_dataset_from_tree_in_group((TTree *)object, group);
         }
         else
         {
             // This type is currently unhandled
-
+            if(verbose)
+            {
+                cerr << "WARNING: Unhandled object type \""
+                     << object_type->GetName() 
+                     << "\" - skipping."
+                     << endl;
+            }
         }
     }
 }

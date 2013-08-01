@@ -36,8 +36,15 @@ if(Boost_SYSTEM_FOUND)
         ${Boost_SYSTEM_LIBRARY})
 endif()
 
+# Add local include directories
+include_directories(${PROJECT_SOURCE_DIR}/source)
+
 # Create the target
-add_executable(root2hdf5 root2hdf5.cpp)
+add_executable(root2hdf5
+               source/options.cpp
+               source/convert.cpp
+               source/tree.cpp
+               source/root2hdf5.cpp)
 target_link_libraries(root2hdf5
                       ${ROOT_LIBRARIES}
                       ${HDF5_LIBRARIES}

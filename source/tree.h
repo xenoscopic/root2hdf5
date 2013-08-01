@@ -4,15 +4,7 @@
 #include <string>
 
 // HDF5 includes
-#include <H5Cpp.h>
-
-
-// Definitions to work around H5 namespaces
-#ifdef H5_NO_NAMESPACE
-#define HDF5_TYPE_CLASS DataType
-#else
-#define HDF5_TYPE_CLASS H5::DataType
-#endif
+#include <hdf5.h>
 
 
 namespace root2hdf5
@@ -27,10 +19,9 @@ namespace root2hdf5
 
                 // Data type properties
                 size_t size();
-                const HDF5_TYPE_CLASS & hdf5_type();
 
             private:
-                
+
 
         };
     }

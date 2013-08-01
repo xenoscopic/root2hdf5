@@ -11,7 +11,7 @@
 #include <TFile.h>
 
 // HDF5 includes
-#include <H5Cpp.h>
+#include <hdf5.h>
 
 // root2hdf5 includes
 #include "options.h"
@@ -22,11 +22,6 @@ using namespace std;
 
 // Boost namespace aliases
 namespace fs = boost::filesystem;
-
-// HDF5 namespaces
-#ifndef H5_NO_NAMESPACE
-using namespace H5;
-#endif
 
 // root2hdf5 namespaces
 using namespace root2hdf5::options;
@@ -79,17 +74,32 @@ int main(int argc, char *argv[])
     TFile *input_file = TFile::Open(input_url.c_str(), "READ");
     if(input_file == NULL)
     {
-        cerr << "Unable to open input file: " << input_url << endl;
+        if(verbose)
+        {
+            cerr << "Unable to open input file: " << input_url << endl;
+        }
         exit(EXIT_FAILURE);
     }
 
     // Open the output file
-    H5File output_file(output_url, H5F_ACC_TRUNC);
+    hid_t output_file = H5Fcreate(output_url.c_str(),
+                                  H5F_ACC_TRUNC,
+                                  H5P_DEFAULT,
+                                  H5P_DEFAULT);
 
     // Walk the input file and convert everything
-    if(!convert(input_file, &output_file))
+    if(!convert(input_file, output_file))
     {
-        cerr << "Conversion failed" << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Cleanup output resources
+    if(H5Fclose(output_file) < 0)
+    {
+        if(verbose)
+        {
+            cerr << "ERROR: Closing output file failed" << endl;
+        }
         exit(EXIT_FAILURE);
     }
 

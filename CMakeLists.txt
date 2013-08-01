@@ -16,7 +16,7 @@ FIND_PACKAGE(ROOT REQUIRED)
 include_directories(${ROOT_INCLUDE_DIR})
 
 # Find HDF5
-find_package(HDF5 COMPONENTS CXX REQUIRED)
+find_package(HDF5 COMPONENTS C REQUIRED)
 include_directories(${HDF5_INCLUDE_DIRS})
 add_definitions(${HDF5_DEFINITIONS})
 

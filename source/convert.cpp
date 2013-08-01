@@ -16,18 +16,13 @@
 // Standard namespaces
 using namespace std;
 
-// HDF5 namespaces
-#ifndef H5_NO_NAMESPACE
-using namespace H5;
-#endif
-
 // root2hdf5 namespaces
 using namespace root2hdf5::options;
 using namespace root2hdf5::tree;
 
 
 bool root2hdf5::convert::convert(TDirectory *directory,
-                                 HDF5_GROUP_TYPE *group)
+                                 hid_t location)
 {
     // Generate a list of keys in the directory
     TIter next_key(directory->GetListOfKeys());
@@ -51,9 +46,24 @@ bool root2hdf5::convert::convert(TDirectory *directory,
         {
             // This is a ROOT directory, so first create a corresponding HDF5
             // group and then recurse into it
-            Group new_group = group->createGroup(key->GetName());
-            if(!convert((TDirectory *)key->ReadObj(), &new_group))
+            hid_t new_group = H5Gcreate2(location,
+                                         key->GetName(),
+                                         H5P_DEFAULT,
+                                         H5P_DEFAULT,
+                                         H5P_DEFAULT);
+            if(!convert((TDirectory *)key->ReadObj(), new_group))
             {
+                return false;
+            }
+            
+            if(H5Gclose(new_group) < 0)
+            {
+                if(verbose)
+                {
+                    cerr << "ERROR: Closing group \"" 
+                         << key->GetName() 
+                         << "\" failed";
+                }
                 return false;
             }
         }

@@ -13,6 +13,6 @@ namespace root2hdf5
     {
         // Primary conversion method
         bool convert(TDirectory *directory,
-                     hid_t location);
+                     hid_t parent_destination);
     }
 }

@@ -22,7 +22,7 @@ using namespace root2hdf5::tree;
 
 
 bool root2hdf5::convert::convert(TDirectory *directory,
-                                 hid_t location)
+                                 hid_t parent_destination)
 {
     // Generate a list of keys in the directory
     TIter next_key(directory->GetListOfKeys());
@@ -46,7 +46,7 @@ bool root2hdf5::convert::convert(TDirectory *directory,
         {
             // This is a ROOT directory, so first create a corresponding HDF5
             // group and then recurse into it
-            hid_t new_group = H5Gcreate2(location,
+            hid_t new_group = H5Gcreate2(parent_destination,
                                          key->GetName(),
                                          H5P_DEFAULT,
                                          H5P_DEFAULT,
@@ -72,7 +72,7 @@ bool root2hdf5::convert::convert(TDirectory *directory,
             // This is a ROOT tree, so we need to create a new HDF5 dataset with
             // custom type matching the TTree branches, and then copy all the
             // data into it
-            // create_dataset_from_tree_in_group((TTree *)object, group);
+            root2hdf5::tree::convert((TTree *)object, parent_destination);
         }
         else
         {
@@ -81,7 +81,7 @@ bool root2hdf5::convert::convert(TDirectory *directory,
             {
                 cerr << "WARNING: Unhandled object type \""
                      << object_type->GetName() 
-                     << "\" - skipping."
+                     << "\" - skipping"
                      << endl;
             }
         }

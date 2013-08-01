@@ -4,10 +4,10 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include <limits>
 
 // Boost includes
 #include <boost/assign.hpp>
+#include <boost/algorithm/string.hpp>
 
 // ROOT includes
 #include <TBranch.h>
@@ -21,6 +21,7 @@
 using namespace std;
 
 // Boost namespaces
+using namespace boost;
 using namespace boost::assign;
 
 // root2hdf5 namespaces
@@ -93,64 +94,189 @@ namespace root2hdf5
             ("Double_t", H5T_NATIVE_DOUBLE)
         ;
 
-        size_t BRANCH_NOT_SUPPORTED = numeric_limits<size_t>::max();
-        size_t size_of_branch(TBranch *branch);
+        string type_name_for_branch(TBranch *branch);
+        bool is_scalar_branch(TBranch *branch);
+        bool convert_scalar_branch(TBranch *branch,
+                                   hid_t tree_group);
+        bool is_convertible_vector_branch(TBranch *branch);
+        bool convert_vector_branch(TBranch *branch,
+                                   hid_t tree_group);
+        bool convert_branch(TBranch *branch,
+                            hid_t tree_group);
+
+        class branch_converter
+        {
+            public:
+                branch_converter(TBranch *branch);
+
+                // Return the size of the buffer necessary for loading the
+                // branch
+
+                size_t buffer_size();
+
+                // Return a datatype for the branch which can be included in the
+                // compound data type generated for the tree.  The returned type
+                // has the same lifetime as the class instance.
+                hid_t hdf5_data_type();
+
+                // Set the buffer for loading data into
+                void set_buffer_address(void *buffer);
+
+                // Convert the data in the buffer
+                void convert_data();
+
+            private:
+                TBranch *_branch;
+        };
     }
 }
 
 
-size_t root2hdf5::tree::size_of_branch(TBranch *branch)
+branch_converter::branch_converter(TBranch *branch) :
+_branch(branch)
 {
-    // Grab the branch name
-    string branch_name(branch->GetName());
 
-    // Grab the leaf representing the branch's data
-    TLeaf *leaf = branch->GetLeaf(branch_name.c_str());
+}
 
-    // Grab the branch type name
-    string type_name = leaf->GetTypeName();
+string root2hdf5::tree::type_name_for_branch(TBranch *branch)
+{
+    return branch->GetLeaf(branch->GetName())->GetTypeName();
+}
 
-    // If this a scalar type, we can just return the leaf's size as reported by
-    // ROOT
-    if(root_type_name_to_hdf5_type.count(type_name) == 1)
+bool root2hdf5::tree::is_scalar_branch(TBranch *branch)
+{
+    return root_type_name_to_hdf5_type.count(type_name_for_branch(branch)) == 1;
+}
+
+bool root2hdf5::tree::convert_scalar_branch(TBranch *branch,
+                                            hid_t tree_group)
+{
+    // TODO: Implement
+    branch = NULL;
+    tree_group = 0;
+    return true;
+}
+
+bool root2hdf5::tree::is_convertible_vector_branch(TBranch *branch)
+{
+    // Grab the type name
+    string type_name = type_name_for_branch(branch);
+
+    // Do some nasty parsing of the type name.  Maybe we can replace this with a
+    // regex in the future, but for now we can do it manually
+    unsigned vector_rank = 0;
+    while(true)
     {
-        return (size_t)leaf->GetLenType();
+        // Check the outermost type to make sure it is a vector
+        bool is_vector = starts_with(type_name, "vector<")
+                         && ends_with(type_name, ">");
+
+        // This is not a vector
+        if(!is_vector)
+        {
+            break;
+        }
+
+        // Increment rank
+        vector_rank++;
+
+        // Parse off outer vector
+        replace_first(type_name, "vector<", "");
+        replace_last(type_name, ">", "");
+        trim(type_name);
     }
 
+    // If the vector rank is 0, it means there were no vectors, which we aren't
+    // designed to handle
+    if(vector_rank == 0)
+    {
+        return false;
+    }
+
+    // Okay, we have the core type now.  Check if it is a scalar type we can
+    // support.
+    if(root_type_name_to_hdf5_type.count(type_name) == 0)
+    {
+        return false;
+    }
+
+    // If we can support the scalar type, make sure the user hasn't nested so
+    // many vectors 
+    if(vector_rank > H5S_MAX_RANK)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool root2hdf5::tree::convert_vector_branch(TBranch *branch,
+                                            hid_t tree_group)
+{
+    // TODO: Implement
+    branch = NULL;
+    tree_group = 0;
+    return true;
+}
+
+
+bool root2hdf5::tree::convert_branch(TBranch *branch,
+                                     hid_t tree_group)
+{
+    // Check if this is a scalar type
+    if(is_scalar_branch(branch))
+    {
+        return convert_scalar_branch(branch, tree_group);
+    }
+    else if(is_convertible_vector_branch(branch))
+    {
+        return convert_vector_branch(branch, tree_group);
+    }
+    
+    // Unsupported type.  Warn, but return success.
     if(verbose)
     {
-        cerr << "WARNING: Unsupported branch \""
-             << branch_name
-             << "\" of type \""
-             << type_name
-             << "\" - skipping"
-             << endl;
+        cerr << "Branch \"" << branch->GetName() << "\" has unsupported type \""
+             << type_name_for_branch(branch) << "\" - skipping" << endl;
     }
 
-    return BRANCH_NOT_SUPPORTED;
+    return true;
 }
 
 
 bool root2hdf5::tree::convert(TTree *tree,
                               hid_t parent_destination)
 {
+    // Create a new group to represent the tree
+    hid_t tree_group = H5Gcreate2(parent_destination,
+                                  tree->GetName(),
+                                  H5P_DEFAULT,
+                                  H5P_DEFAULT,
+                                  H5P_DEFAULT);
+
     // Loop through the branches of the tree
     TIter next_branch(tree->GetListOfBranches());
     TBranch *branch = NULL;
     while((branch = (TBranch *)next_branch()))
     {
-        // Get the branch size
-        size_t branch_size = size_of_branch(branch);
-
-        // If it is not supported, move on
-        if(branch_size == BRANCH_NOT_SUPPORTED)
+        // Convert the branch
+        if(!convert_branch(branch, tree_group))
         {
-            continue;
+            return false;
         }
     }
 
-    // TODO: Remove
-    parent_destination = 1;
+    // Close up the tree group
+    if(H5Gclose(tree_group) < 0)
+    {
+        if(verbose)
+        {
+            cerr << "ERROR: Closing tree group \"" 
+                 << tree->GetName() 
+                 << "\" failed";
+        }
+        return false;
+    }
 
     // All done
     return true;

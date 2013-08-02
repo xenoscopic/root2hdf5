@@ -40,6 +40,9 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/source)
 
 # Create the target
+add_executable(test test.cpp)
+target_link_libraries(test
+                      ${ROOT_LIBRARIES})
 add_executable(root2hdf5
                source/options.cpp
                source/convert.cpp

@@ -2,14 +2,21 @@
 
 // Standard includes
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <string>
+#include <sstream>
+#include <utility>
+#include <functional>
+#include <vector>
 
 // Boost includes
 #include <boost/assign.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/filesystem.hpp>
 
 // ROOT includes
+#include <TROOT.h>
 #include <TBranch.h>
 #include <TLeaf.h>
 
@@ -23,6 +30,9 @@ using namespace std;
 // Boost namespaces
 using namespace boost;
 using namespace boost::assign;
+
+// Boost namespace aliases
+namespace fs = boost::filesystem;
 
 // root2hdf5 namespaces
 using namespace root2hdf5::tree;
@@ -94,254 +104,309 @@ namespace root2hdf5
             ("Double_t", H5T_NATIVE_DOUBLE)
         ;
 
-        string type_name_for_branch(TBranch *branch);
-        bool is_scalar_branch(TBranch *branch);
-        bool convert_scalar_branch(TBranch *branch,
-                                   hid_t tree_group);
-        bool is_convertible_vector_branch(TBranch *branch);
-        bool convert_vector_branch(TBranch *branch,
-                                   hid_t tree_group);
-        bool convert_branch(TBranch *branch,
-                            hid_t tree_group);
+        // Convenience wrapper for loading potentially long code
+        bool process_long_line(const string & long_line);
 
-        class branch_converter
-        {
-            public:
-                branch_converter(TBranch *branch);
+        // Converts a TBranch to a string representing a member suitable for
+        // inclusion in an HDF5 struct
+        string hdf5_struct_member_for_branch(TBranch *branch);
 
-                // Return the size of the buffer necessary for loading the
-                // branch
+        // Converts a TTree (and its branches) to a string representing a struct
+        // suitable for use as an HDF5 struct.  Returns a pair of
+        //  (type_name, code_for_type)
+        pair<string, string> hdf5_struct_for_tree(TTree *tree);
 
-                size_t buffer_size();
+        // Type for providing callbacks to data conversion functions which need
+        // to be called every time TTree::GetEntry is called to convert
+        // non-scalar members
+        typedef function<void>() converter;
 
-                // Return a datatype for the branch which can be included in the
-                // compound data type generated for the tree.  The returned type
-                // has the same lifetime as the class instance.
-                hid_t hdf5_data_type();
+        converter map_branch_and_build_converter(
+            TBranch *branch,
+            string branch_prefix,
+            string hdf5_struct_name,
+            hid_t hdf5_type,
+            void *hdf5_struct
+        );
 
-                // Set the buffer for loading data into
-                void set_buffer_address(void *buffer);
-
-                // Convert the data in the buffer
-                void convert_data();
-
-            private:
-                TBranch *_branch;
-        };
+        converter map_tree_and_build_composite_type_and_converter(
+            TTree *tree,
+            string hdf5_struct_name,
+            hid_t hdf5_type,
+            void *hdf5_struct
+        );
     }
 }
 
 
-branch_converter::branch_converter(TBranch *branch) :
-_branch(branch)
+bool root2hdf5::tree::process_long_line(const string & long_line)
 {
+    // TODO: It might be better to add some more stringent error checking in
+    // here, but most of these things are such robust, low-level OS things that
+    // if they fail, the user's environment is probably already melting around
+    // them, so just assume the temporary file creation/writing/deletion will
+    // work.  However, still check LoadMacro's return code, because it is easy
+    // and because we can't trust ROOT.
 
-}
+    // Generate a temporary path to write the line to
+    fs::path temp_path = fs::temp_directory_path() 
+                         / fs::unique_path("%%%%-%%%%-%%%%-%%%%.cpp");
 
-string root2hdf5::tree::type_name_for_branch(TBranch *branch)
-{
-    return branch->GetLeaf(branch->GetName())->GetTypeName();
-}
+    // Write the line to the temporary file.  It is very important that we
+    // include a newline at the end or ROOT's crappy interpreter will give an
+    // "unexpected EOF" error sporadically.
+    ofstream output(temp_path.c_str(), ofstream::out);
+    output << long_line << endl;
+    output.close();
 
-bool root2hdf5::tree::is_scalar_branch(TBranch *branch)
-{
-    return root_type_name_to_hdf5_type.count(type_name_for_branch(branch)) == 1;
-}
-
-bool root2hdf5::tree::convert_scalar_branch(TBranch *branch,
-                                            hid_t tree_group)
-{
-    // Grab the tree and entry count
-    TTree *tree = branch->GetTree();
-    hsize_t n_entries = tree->GetEntries();
-
-    // Grab the leaf representing the branch
-    // TLeaf *leaf = branch->GetLeaf(branch->GetName());
-
-    // Create a dataset to represent the branch
-    hid_t dataspace = H5Screate_simple(1, &n_entries, NULL);
-
-    // Create the dataset
-    // TODO: Should we check our map lookup here?
-    hid_t dataset = H5Dcreate2(
-        tree_group,
-        branch->GetName(),
-        root_type_name_to_hdf5_type[type_name_for_branch(branch)],
-        dataspace,
-        H5P_DEFAULT,
-        H5P_DEFAULT,
-        H5P_DEFAULT
-    );
-
-    // Disable all branches in the tree except the selected one
-    tree->SetBranchStatus("*", 0);
-    tree->SetBranchStatus(branch->GetName(), 1);
-
-
-
-
-    // Cleanup
-    if(H5Dclose(dataset) < 0)
-    {
-        // Closing the dataset failed
-        if(verbose)
-        {
-            cerr << "ERROR: Closing dataset failed for branch \""
-                 << branch->GetName() << "\"" << endl;
-        }
-
-        return false;
-    }
-
-    if(H5Sclose(dataspace) < 0)
-    {
-        // Closing the dataspace failed
-        if(verbose)
-        {
-            cerr << "ERROR: Closing dataspace failed for branch \""
-                 << branch->GetName() << "\"" << endl;
-        }
-
-        return false;
-    }
-
-    return true;
-}
-
-bool root2hdf5::tree::is_convertible_vector_branch(TBranch *branch)
-{
-    // Grab the type name
-    string type_name = type_name_for_branch(branch);
-
-    // Do some nasty parsing of the type name.  Maybe we can replace this with a
-    // regex in the future, but for now we can do it manually
-    unsigned vector_rank = 0;
-    while(true)
-    {
-        // Check the outermost type to make sure it is a vector
-        bool is_vector = starts_with(type_name, "vector<")
-                         && ends_with(type_name, ">");
-
-        // This is not a vector
-        if(!is_vector)
-        {
-            break;
-        }
-
-        // Increment rank
-        vector_rank++;
-
-        // Parse off outer vector
-        replace_first(type_name, "vector<", "");
-        replace_last(type_name, ">", "");
-        trim(type_name);
-    }
-
-    // If the vector rank is 0, it means there were no vectors, which we aren't
-    // designed to handle
-    if(vector_rank == 0)
-    {
-        return false;
-    }
-
-    // Okay, we have the core type now.  Check if it is a scalar type we can
-    // support.
-    if(root_type_name_to_hdf5_type.count(type_name) == 0)
-    {
-        return false;
-    }
-
-    // If we can support the scalar type, make sure the user hasn't nested so
-    // many vectors 
-    if(vector_rank > H5S_MAX_RANK)
-    {
-        return false;
-    }
-
-    return true;
-}
-
-bool root2hdf5::tree::convert_vector_branch(TBranch *branch,
-                                            hid_t tree_group)
-{
-    // TODO: Implement
-    branch = NULL;
-    tree_group = 0;
-    return true;
-}
-
-
-bool root2hdf5::tree::convert_branch(TBranch *branch,
-                                     hid_t tree_group)
-{
-    // Make sure this is a single-leaf branch for now.  Multileaf branches are
-    // currently unsupported.
-    if(branch->GetNleaves() != 1)
+    // Process the line
+    if(gROOT->LoadMacro((temp_path.native()).c_str()) < 0)
     {
         if(verbose)
         {
-            cout << "WARNING: Branch \"" << branch->GetName() 
-                 << "\" has an unsupported number of leaves ("
-                 << branch->GetNleaves() << ") - skipping" << endl;
+            cerr << "ERROR: Unable to load temporary macro" << endl;
         }
-        
-        return true;
+
+        return false;
     }
 
-    // Otherwise see if it is some type of branch we can handle
-    if(is_scalar_branch(branch))
-    {
-        return convert_scalar_branch(branch, tree_group);
-    }
-    else if(is_convertible_vector_branch(branch))
-    {
-        return convert_vector_branch(branch, tree_group);
-    }
+    // Remove the file
+    fs::remove(temp_path);
     
-    // Unsupported type.  Warn, but return success.
-    if(verbose)
+    return true;
+}
+
+
+string root2hdf5::tree::hdf5_struct_member_for_branch(TBranch *branch)
+{
+    // Create a stringstream to contain the struct for the branch
+    stringstream result;
+
+    // First, check if this is just a scalar branch (i.e. single-leaf with no
+    // subbranches).  If that is the case, then we just return a single member
+    // for the parent struct.
+    if(branch->GetNleaves() == 1 
+       && branch->GetListOfBranches()->GetEntries() == 0)
     {
-        cerr << "Branch \"" << branch->GetName() << "\" has unsupported type \""
-             << type_name_for_branch(branch) << "\" - skipping" << endl;
+        // This is a single scalar branch.  Grab the type name
+        string type_name = branch->GetLeaf(branch->GetName())->GetTypeName();
+
+        // Check that we can support this type
+        if(root_type_name_to_hdf5_type.count(type_name) != 1)
+        {
+            // Unsupported type
+            if(verbose)
+            {
+                cerr << "WARNING: Unsupported type \"" << type_name << "\" for "
+                     << "branch \"" << branch->GetName() << "\" - skipping"
+                     << endl;
+            }
+
+            return "";
+        }
+
+        // We can support this just fine
+        result << type_name << " " << branch->GetName() << ";";
+    }
+    else
+    {
+        // This is a more complex branch
+        return "";
     }
 
-    return true;
+    return result.str();
+}
+
+
+pair<string, string> root2hdf5::tree::hdf5_struct_for_tree(TTree *tree)
+{
+    // Create a stringstream to contain the outer struct
+    stringstream struct_name;
+    stringstream result;
+
+    // Set up the outer struct stuff
+    struct_name << "tree_" << (long int)tree;
+    result << "struct " << struct_name.str() << "{";
+
+    // Loop over the branches of the tree and add their structs
+    TIter next_branch(tree->GetListOfBranches());
+    TBranch *branch = NULL;
+    while((branch = (TBranch *)next_branch()))
+    {
+        // Calculate the member
+        string branch_struct_member = 
+            hdf5_struct_member_for_branch(branch);
+
+        // Make sure it was supported
+        if(branch_struct_member == "")
+        {
+            continue;
+        }
+
+        result << branch_struct_member;
+    }
+
+    // Close up the struct
+    result << "};";
+
+    return make_pair(struct_name.str(), result.str());
+}
+
+
+converter root2hdf5::tree::map_branch_and_build_converter(
+    TBranch *branch,
+    string branch_prefix,
+    string hdf5_struct_name,
+    hid_t hdf5_type,
+    void *hdf5_struct
+)
+{
+    // First, check if this is just a scalar branch (i.e. single-leaf with no
+    // subbranches).  If that is the case, then we just return a single member
+    // for the parent struct.
+    if(branch->GetNleaves() == 1 
+       && branch->GetListOfBranches()->GetEntries() == 0)
+    {
+        // This is a single scalar branch.  Grab the type name
+        string type_name = branch->GetLeaf(branch->GetName())->GetTypeName();
+
+        // Check that we can support this type
+        if(root_type_name_to_hdf5_type.count(type_name) != 1)
+        {
+            // Unsupported type
+            if(verbose)
+            {
+                cerr << "WARNING: Unsupported type \"" << type_name << "\" for "
+                     << "branch \"" << branch->GetName() << "\" - skipping"
+                     << endl;
+            }
+
+            return "";
+        }
+
+        // We can support this just fine
+        result << type_name << " " << branch->GetName() << ";";
+    }
+    else
+    {
+        // This is a more complex branch
+        return "";
+    }
+
+    // Return an empty converter
+    return [](){};   
+}
+
+converter root2hdf5::tree::map_tree_and_build_composite_type_and_converter(
+    TTree *tree,
+    string hdf5_struct_name,
+    hid_t hdf5_type,
+    void *hdf5_struct
+)
+{
+    // Create a vector of converters that we can use in our own lambda
+    vector<converter> converters;
+
+    // Loop over the branches of the tree and add their structs
+    TIter next_branch(tree->GetListOfBranches());
+    TBranch *branch = NULL;
+    while((branch = (TBranch *)next_branch()))
+    {
+        // Map and calculate the converter for the branch
+        converters.push_back(
+            map_branch_and_build_converter(
+                branch,
+                "",
+                hdf5_struct_name,
+                hdf5_type,
+                hdf5_struct
+            )
+        );
+    }
+
+    return [=]()
+    {
+        // Loop over all branch converters and call them
+        for(auto it = converters.begin();
+            it != converters.end();
+            it++)
+        {
+            (*it)();
+        }
+    };
 }
 
 
 bool root2hdf5::tree::convert(TTree *tree,
                               hid_t parent_destination)
 {
-    // Create a new group to represent the tree
-    hid_t tree_group = H5Gcreate2(parent_destination,
-                                  tree->GetName(),
-                                  H5P_DEFAULT,
-                                  H5P_DEFAULT,
-                                  H5P_DEFAULT);
+    // TODO: Remove
+    parent_destination = 0;
 
-    // Loop through the branches of the tree
-    TIter next_branch(tree->GetListOfBranches());
-    TBranch *branch = NULL;
-    while((branch = (TBranch *)next_branch()))
-    {
-        // Convert the branch
-        if(!convert_branch(branch, tree_group))
-        {
-            return false;
-        }
-    }
+    // Create a string which represents a struct that we can use to construct
+    // the HDF5 composite data type
+    auto hdf5_struct_name_code = hdf5_struct_for_tree(tree);
+    string hdf5_struct_name = hdf5_struct_name_code.first;
+    string hdf5_struct_code = hdf5_struct_name_code.second;
 
-    // Close up the tree group
-    if(H5Gclose(tree_group) < 0)
+    cout << hdf5_struct_code << endl;
+
+    // Tell CINT about the structure
+    if(!process_long_line(hdf5_struct_code))
     {
         if(verbose)
         {
-            cerr << "ERROR: Closing tree group \"" 
-                 << tree->GetName() 
-                 << "\" failed";
+            cerr << "ERROR: Unable to generate temporary struct for converting "
+                 << "tree \"" << tree->GetName() << "\"";
         }
+
         return false;
     }
+
+    // TODO: Perhaps find some way to check the code being executed here,
+    // although it is probably not essential since ROOT will probably crash
+    // internally before returning anything.
+
+    // Create a stringstream to build up our commands
+    stringstream command;
+
+    // Calculate the size of the structure
+    command.str("");
+    command << "sizeof(" << hdf5_struct_name << ");";
+    size_t hdf5_struct_size = (size_t)gROOT->ProcessLine(
+        command.str().c_str()
+    );
+    
+    // Tell CINT to allocate an instance of the structure
+    command.str("");
+    command << "(void *)(new " << hdf5_struct_name << ");";
+    void *hdf5_struct = (void *)gROOT->ProcessLine(command.str().c_str());
+
+    // Create the HDF5 compound datatype to use for the tree
+    hid_t hdf5_type = H5Tcreate(H5T_COMPOUND, hdf5_struct_size);
+
+    // Map the tree branches into the HDF5 structure and fill in the composite
+    // HDF5 type
+    converter convert = map_tree_and_build_composite_type_and_converter(
+        tree,
+        hdf5_struct_name,
+        hdf5_type,
+        hdf5_struct
+    );
+
+    // Loop through the tree, getting every entry, calling the converter, and
+    // then writing it to the HDF5 dataset
+
+
+
+    // Close out the HDF5 data type
+    H5Tclose(hdf5_type);
+
+    // Tell CINT to deallocate the instance of the structure
+    command.str("");
+    command << "delete ((" << hdf5_struct_name << " *)" << hdf5_struct << ");";
+    gROOT->ProcessLine(command.str().c_str());
+    hdf5_struct = NULL;
 
     // All done
     return true;

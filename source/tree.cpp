@@ -151,9 +151,60 @@ bool root2hdf5::tree::is_scalar_branch(TBranch *branch)
 bool root2hdf5::tree::convert_scalar_branch(TBranch *branch,
                                             hid_t tree_group)
 {
-    // TODO: Implement
-    branch = NULL;
-    tree_group = 0;
+    // Grab the tree and entry count
+    TTree *tree = branch->GetTree();
+    hsize_t n_entries = tree->GetEntries();
+
+    // Grab the leaf representing the branch
+    // TLeaf *leaf = branch->GetLeaf(branch->GetName());
+
+    // Create a dataset to represent the branch
+    hid_t dataspace = H5Screate_simple(1, &n_entries, NULL);
+
+    // Create the dataset
+    // TODO: Should we check our map lookup here?
+    hid_t dataset = H5Dcreate2(
+        tree_group,
+        branch->GetName(),
+        root_type_name_to_hdf5_type[type_name_for_branch(branch)],
+        dataspace,
+        H5P_DEFAULT,
+        H5P_DEFAULT,
+        H5P_DEFAULT
+    );
+
+    // Disable all branches in the tree except the selected one
+    tree->SetBranchStatus("*", 0);
+    tree->SetBranchStatus(branch->GetName(), 1);
+
+
+
+
+    // Cleanup
+    if(H5Dclose(dataset) < 0)
+    {
+        // Closing the dataset failed
+        if(verbose)
+        {
+            cerr << "ERROR: Closing dataset failed for branch \""
+                 << branch->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
+
+    if(H5Sclose(dataspace) < 0)
+    {
+        // Closing the dataspace failed
+        if(verbose)
+        {
+            cerr << "ERROR: Closing dataspace failed for branch \""
+                 << branch->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
+
     return true;
 }
 
@@ -223,7 +274,21 @@ bool root2hdf5::tree::convert_vector_branch(TBranch *branch,
 bool root2hdf5::tree::convert_branch(TBranch *branch,
                                      hid_t tree_group)
 {
-    // Check if this is a scalar type
+    // Make sure this is a single-leaf branch for now.  Multileaf branches are
+    // currently unsupported.
+    if(branch->GetNleaves() != 1)
+    {
+        if(verbose)
+        {
+            cout << "WARNING: Branch \"" << branch->GetName() 
+                 << "\" has an unsupported number of leaves ("
+                 << branch->GetNleaves() << ") - skipping" << endl;
+        }
+        
+        return true;
+    }
+
+    // Otherwise see if it is some type of branch we can handle
     if(is_scalar_branch(branch))
     {
         return convert_scalar_branch(branch, tree_group);

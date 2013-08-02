@@ -119,7 +119,7 @@ namespace root2hdf5
         // Type for providing callbacks to data conversion functions which need
         // to be called every time TTree::GetEntry is called to convert
         // non-scalar members
-        typedef function<void>() converter;
+        typedef function<void()> converter;
 
         converter map_branch_and_build_converter(
             TBranch *branch,
@@ -211,6 +211,7 @@ string root2hdf5::tree::hdf5_struct_member_for_branch(TBranch *branch)
     else
     {
         // This is a more complex branch
+        // TODO: Implement
         return "";
     }
 
@@ -261,6 +262,15 @@ converter root2hdf5::tree::map_branch_and_build_converter(
     void *hdf5_struct
 )
 {
+    // TODO: Remove
+    branch_prefix = "";
+    hdf5_struct_name = "";
+    hdf5_type = 0;
+    hdf5_struct = NULL;
+
+    // TODO: When we support other branches, we need to redo this function and
+    // remove this conditional, just handling the general case
+
     // First, check if this is just a scalar branch (i.e. single-leaf with no
     // subbranches).  If that is the case, then we just return a single member
     // for the parent struct.
@@ -273,24 +283,20 @@ converter root2hdf5::tree::map_branch_and_build_converter(
         // Check that we can support this type
         if(root_type_name_to_hdf5_type.count(type_name) != 1)
         {
-            // Unsupported type
-            if(verbose)
-            {
-                cerr << "WARNING: Unsupported type \"" << type_name << "\" for "
-                     << "branch \"" << branch->GetName() << "\" - skipping"
-                     << endl;
-            }
-
-            return "";
+            // No need to provide a warning here, it will have already been
+            // provided in hdf5_struct_member_for_branch
+            return [](){};
         }
 
-        // We can support this just fine
-        result << type_name << " " << branch->GetName() << ";";
+        // TODO: Map the branch
+
+        // No complex converter necessary
+        return [](){};
     }
     else
     {
         // This is a more complex branch
-        return "";
+        return [](){};
     }
 
     // Return an empty converter
@@ -396,7 +402,7 @@ bool root2hdf5::tree::convert(TTree *tree,
 
     // Loop through the tree, getting every entry, calling the converter, and
     // then writing it to the HDF5 dataset
-
+    // TODO: Implement
 
 
     // Close out the HDF5 data type

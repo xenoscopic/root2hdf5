@@ -45,35 +45,86 @@ namespace root2hdf5
 {
     namespace tree
     {
-        // Convenience wrapper for loading potentially long code
+        // This method provides a convenient interface for executing code via
+        // CINT which might be too long for the TROOT::ProcessLine method (which
+        // has a limit of 2043 characters).  The method creates a temporary file
+        // in which to write the code, has CINT load the file from disk, and
+        // then cleans up the temporary file.  This method returns true on
+        // success and false on failure.
         bool process_long_line(const string & long_line);
 
-        // Converts a TBranch to a string representing a member suitable for
-        // inclusion in an HDF5 struct
+        // Converts a TBranch into a string representing a member suitable for
+        // inclusion in a C struct representing an HDF5 compound data type.  The
+        // resulting type may not match the original branch type (e.g. in the
+        // case of non-scalar types such as vector<...>), but the
+        // map_branch_and_build_converter function will allocate an intermediate
+        // buffer for the TTree to load its data into, a converter function
+        // which will convert the data from the intermediate buffer into the
+        // HDF5 struct, and a cleanup function to remove the intermediate
+        // buffer.
         string hdf5_struct_member_for_branch(TBranch *branch);
 
         // Converts a TTree (and its branches) to a string representing a struct
-        // suitable for use as an HDF5 struct.  Returns a pair of
-        //  (type_name, code_for_type)
+        // suitable for use as a buffer for an HDF5 compound type.  The function
+        // returns a pair of the form (struct_type_name, code_for_struct).
         pair<string, string> hdf5_struct_for_tree(TTree *tree);
 
         // Type for providing callbacks to data conversion functions which need
         // to be called every time TTree::GetEntry is called to convert
-        // non-scalar members
+        // non-scalar members.
         typedef std::function<void()> converter;
 
-        converter map_branch_and_build_converter(
+        // Type for providing callbacks to cleanup intermediate buffers
+        // allocated for TTree data loading and conversion.
+        typedef std::function<void()> deallocator;
+
+        // Recursively maps (using SetBranchAddress) the subbranches and leaves
+        // of a branch into the provided HDF5 struct, or allocates an
+        // intermediate buffer for loading the branch and provides a conversion
+        // callback that will map data from the intermediate buffer to the HDF5
+        // struct.  This method also builds up the HDF5 compound datatype by
+        // adding this branch's leaves/subbranches.  This method effectively
+        // flattens the TTree structure by simply mapping the leaf/subbranch
+        // types into the root compound type and prefixing their names with the
+        // value in branch_prefix.  E.g. the TTree:
+        //      (root)/
+        //          Branch1 (int)
+        //          Branch2/
+        //              Leaf1 (float)
+        //              Leaf2 (float)
+        //              Subbranch1/
+        //                  Leaf3 (bool)
+        //          Branch3 (double)
+        //
+        // Would become the HDF5 compound type:
+        //      {
+        //          int Branch1;
+        //          float Branch2.Leaf1;
+        //          float Branch2.Leaf2;
+        //          bool Branch2.Subbranch1.Leaf3
+        //          double Branch3;
+        //      }
+        //
+        // This is possible because HDF5 supports arbitrary field names in data
+        // types, and the offsets/nesting structure is really just an
+        // abstraction anyway.
+        pair<converter, deallocator> map_branch_and_build_converter(
             TBranch *branch,
             string branch_prefix,
             string hdf5_struct_name,
-            hid_t hdf5_type,
+            hid_t hdf5_compound_type,
             void *hdf5_struct
         );
 
-        converter map_tree_and_build_composite_type_and_converter(
+        // This method calls map_branch_and_build_converter for every branch in
+        // the provided TTree.  It combines all of the returned converters and
+        // deallocators into a single instance that can be called whenever
+        // TTree::GetEntry is called.
+        pair<converter, deallocator> 
+        map_tree_and_build_composite_type_and_converter(
             TTree *tree,
             string hdf5_struct_name,
-            hid_t hdf5_type,
+            hid_t hdf5_compound_type,
             void *hdf5_struct
         );
     }
@@ -195,11 +246,11 @@ pair<string, string> root2hdf5::tree::hdf5_struct_for_tree(TTree *tree)
 }
 
 
-converter root2hdf5::tree::map_branch_and_build_converter(
+pair<converter, deallocator> root2hdf5::tree::map_branch_and_build_converter(
     TBranch *branch,
     string branch_prefix,
     string hdf5_struct_name,
-    hid_t hdf5_type,
+    hid_t hdf5_compound_type,
     void *hdf5_struct
 )
 {
@@ -221,7 +272,7 @@ converter root2hdf5::tree::map_branch_and_build_converter(
         {
             // No need to provide a warning here, it will have already been
             // provided in hdf5_struct_member_for_branch
-            return [](){};
+            return make_pair([](){}, [](){});
         }
 
         // Check the offset of the field in our struct
@@ -234,7 +285,7 @@ converter root2hdf5::tree::map_branch_and_build_converter(
         );
 
         // Grab the HDF5 type
-        if(H5Tinsert(hdf5_type,
+        if(H5Tinsert(hdf5_compound_type,
                      branch->GetName(), // TODO: Fix this for leaves
                      leaf_offset,
                      hdf5_scalar_type) < 0)
@@ -247,59 +298,76 @@ converter root2hdf5::tree::map_branch_and_build_converter(
             }
 
             // TODO: How can we return an error here?
-            return [](){};
+            return make_pair([](){}, [](){});
         }
 
         // No complex converter necessary
-        return [](){};
+        return make_pair([](){}, [](){});
     }
     else
     {
         // This is a more complex branch
-        return [](){};
+        return make_pair([](){}, [](){});
     }
 
     // Return an empty converter
-    return [](){};   
+    return make_pair([](){}, [](){});   
 }
 
-converter root2hdf5::tree::map_tree_and_build_composite_type_and_converter(
+pair<converter, deallocator>
+root2hdf5::tree::map_tree_and_build_composite_type_and_converter(
     TTree *tree,
     string hdf5_struct_name,
-    hid_t hdf5_type,
+    hid_t hdf5_compound_type,
     void *hdf5_struct
 )
 {
-    // Create a vector of converters that we can use in our own lambda
+    // Create a vector of converters/deallocators that we can use in our own
+    // lambda
     vector<converter> converters;
+    vector<deallocator> deallocators;
 
     // Loop over the branches of the tree and add their structs
     TIter next_branch(tree->GetListOfBranches());
     TBranch *branch = NULL;
     while((branch = (TBranch *)next_branch()))
     {
-        // Map and calculate the converter for the branch
-        converters.push_back(
-            map_branch_and_build_converter(
-                branch,
-                "",
-                hdf5_struct_name,
-                hdf5_type,
-                hdf5_struct
-            )
+        // Map and calculate the converter/deallocator for the branch
+        auto converter_deallocator = map_branch_and_build_converter(
+            branch,
+            "",
+            hdf5_struct_name,
+            hdf5_compound_type,
+            hdf5_struct
         );
+
+        // Add them to our list
+        converters.push_back(converter_deallocator.first);
+        deallocators.push_back(converter_deallocator.second);
     }
 
-    return [=]()
-    {
-        // Loop over all branch converters and call them
-        for(auto it = converters.begin();
-            it != converters.end();
-            it++)
+    return make_pair(
+        [=]()
         {
-            (*it)();
+            // Loop over all branch converters and call them
+            for(auto it = converters.begin();
+                it != converters.end();
+                it++)
+            {
+                (*it)();
+            }
+        },
+        [=]()
+        {
+            // Loop over all branch converters and call them
+            for(auto it = deallocators.begin();
+                it != deallocators.end();
+                it++)
+            {
+                (*it)();
+            }
         }
-    };
+    );
 }
 
 
@@ -348,7 +416,8 @@ bool root2hdf5::tree::convert(TTree *tree,
 
     // Map the tree branches into the HDF5 structure and fill in the composite
     // HDF5 type
-    converter convert = map_tree_and_build_composite_type_and_converter(
+    auto converter_deallocator = 
+    map_tree_and_build_composite_type_and_converter(
         tree,
         hdf5_struct_name,
         hdf5_type,
@@ -375,6 +444,9 @@ bool root2hdf5::tree::convert(TTree *tree,
 
 
 
+
+    // Clean conversion up resources
+    converter_deallocator.second();
 
     // Close the data set
     if(H5Dclose(hdf5_dataset) < 0)

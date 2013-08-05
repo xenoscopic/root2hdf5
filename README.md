@@ -3,6 +3,14 @@ root2hdf5
 Liberate your data from the monstrosity which is ROOT.
 
 
+Requirements
+------------
+- CMake (for building) 2.8.3+
+- Boost (tested with 1.54.0, should work back to at least 1.44.0)
+- ROOT (any relatively recent version)
+- HDF5 1.8+
+
+
 Acknowledgements
 ----------------
 FindROOT.cmake used under LGPL license from the ROOT source code:

@@ -1,12 +1,17 @@
 # Set the minmum CMake version
-cmake_minimum_required(VERSION 2.6.4)
+cmake_minimum_required(VERSION 2.8.3)
 
 # Set the project name
 project(root2hdf5)
 
 # Use C++11 with strict compilation flags
+# HACK: We use the old c++0x flag to support pre-4.7 versions of GCC which do
+# not know that it ended up being C++11.  This is also supported by Clang.  If
+# this starts to become a bit of a pain, we can maybe do some smarter compiler
+# detection.
+# TODO: Add -Werror back into here after development is more finished.
 set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -pedantic -Werror")
+    "${CMAKE_CXX_FLAGS} -std=c++0x -Wall -Wextra -pedantic")
 
 # Add extra CMake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake)
@@ -25,24 +30,15 @@ add_definitions(${HDF5_DEFINITIONS})
 # into system/filesystem libraries, so system may not exist on older Boost
 # installs.  Here we make it optional and only link against it if it exists.
 find_package(Boost COMPONENTS program_options filesystem REQUIRED)
-find_package(Boost COMPONENTS system)
 include_directories(${Boost_INCLUDE_DIR})
 set(BOOST_LINK_TARGETS
         ${Boost_PROGRAM_OPTIONS_LIBRARY}
         ${Boost_FILESYSTEM_LIBRARY})
-if(Boost_SYSTEM_FOUND)
-    set(BOOST_LINK_TARGETS
-        ${BOOST_LINK_TARGETS}
-        ${Boost_SYSTEM_LIBRARY})
-endif()
 
 # Add local include directories
 include_directories(${PROJECT_SOURCE_DIR}/source)
 
 # Create the target
-add_executable(test test.cpp)
-target_link_libraries(test
-                      ${ROOT_LIBRARIES})
 add_executable(root2hdf5
                source/options.cpp
                source/convert.cpp

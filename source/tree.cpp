@@ -11,6 +11,11 @@
 #include <vector>
 
 // Boost includes
+// HACK: Need to define this macro to tell Boost not to use deprecated
+// Boost.System constructs which result in unused-variable errors.
+#ifndef BOOST_SYSTEM_NO_DEPRECATED
+#define BOOST_SYSTEM_NO_DEPRECATED 1
+#endif
 #include <boost/assign.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
@@ -51,8 +56,13 @@ namespace root2hdf5
         map<string, hid_t> root_type_name_to_hdf5_type = 
         map_list_of
             // Boolean types
-            ("bool", H5T_NATIVE_HBOOL)
-            ("Bool_t", H5T_NATIVE_HBOOL)
+            // HACK: HDF5 expects it's booleans to be > 1 byte, so mapping
+            // these to the native HDF5 bools and then giving the offset of a
+            // bool type in the generated structure makes HDF5 suspect there
+            // are overlapping members in the data structure, so we hack the
+            // bools into signed chars.
+            ("bool", H5T_NATIVE_SCHAR)
+            ("Bool_t", H5T_NATIVE_SCHAR)
 
             // Signed character types
             ("char", H5T_NATIVE_SCHAR)
@@ -119,7 +129,7 @@ namespace root2hdf5
         // Type for providing callbacks to data conversion functions which need
         // to be called every time TTree::GetEntry is called to convert
         // non-scalar members
-        typedef function<void()> converter;
+        typedef std::function<void()> converter;
 
         converter map_branch_and_build_converter(
             TBranch *branch,
@@ -262,12 +272,6 @@ converter root2hdf5::tree::map_branch_and_build_converter(
     void *hdf5_struct
 )
 {
-    // TODO: Remove
-    branch_prefix = "";
-    hdf5_struct_name = "";
-    hdf5_type = 0;
-    hdf5_struct = NULL;
-
     // TODO: When we support other branches, we need to redo this function and
     // remove this conditional, just handling the general case
 
@@ -288,7 +292,32 @@ converter root2hdf5::tree::map_branch_and_build_converter(
             return [](){};
         }
 
-        // TODO: Map the branch
+        // Check the offset of the field in our struct
+        size_t leaf_offset = gROOT->ProcessLine(
+            (string("offsetof(")
+             + hdf5_struct_name
+             + string(",")
+             + string(branch->GetName())
+             + string(");")).c_str()
+        );
+
+        // Grab the HDF5 type
+        hid_t hdf5_scalar_type = root_type_name_to_hdf5_type[type_name];
+        if(H5Tinsert(hdf5_type,
+                     branch->GetName(), // TODO: Fix this for leaves
+                     leaf_offset,
+                     hdf5_scalar_type) < 0)
+        {
+            if(verbose)
+            {
+                // TODO: Fix this for leaves
+                cerr << "ERROR: Could not insert scalar type for leaf \""
+                     << branch->GetName() << "\"" << endl;
+            }
+
+            // TODO: How can we return an error here?
+            return [](){};
+        }
 
         // No complex converter necessary
         return [](){};
@@ -346,16 +375,11 @@ converter root2hdf5::tree::map_tree_and_build_composite_type_and_converter(
 bool root2hdf5::tree::convert(TTree *tree,
                               hid_t parent_destination)
 {
-    // TODO: Remove
-    parent_destination = 0;
-
     // Create a string which represents a struct that we can use to construct
     // the HDF5 composite data type
     auto hdf5_struct_name_code = hdf5_struct_for_tree(tree);
     string hdf5_struct_name = hdf5_struct_name_code.first;
     string hdf5_struct_code = hdf5_struct_name_code.second;
-
-    cout << hdf5_struct_code << endl;
 
     // Tell CINT about the structure
     if(!process_long_line(hdf5_struct_code))
@@ -400,15 +424,62 @@ bool root2hdf5::tree::convert(TTree *tree,
         hdf5_struct
     );
 
-    // TODO: Create the dataset in the target group
+    // Create the dataspace with the same dimensions as the tree
+    hsize_t n_entries = tree->GetEntries();
+    hid_t hdf5_space = H5Screate_simple(1, &n_entries, NULL);
+
+    // Create the dataset
+    hid_t hdf5_dataset = H5Dcreate2(parent_destination,
+                                    tree->GetName(),
+                                    hdf5_type,
+                                    hdf5_space,
+                                    H5P_DEFAULT,
+                                    H5P_DEFAULT,
+                                    H5P_DEFAULT);
 
     // Loop through the tree, getting every entry, calling the converter, and
     // then writing it to the HDF5 dataset
     // TODO: Implement
+    //
 
+
+
+
+    // Close the data set
+    if(H5Dclose(hdf5_dataset) < 0)
+    {
+        if(verbose)
+        {
+            cerr << "ERROR: Couldn't close HDF5 dataset for tree \""
+                 << tree->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
+    
+    // Close out the HDF5 data space
+    if(H5Sclose(hdf5_space) < 0)
+    {
+        if(verbose)
+        {
+            cerr << "ERROR: Couldn't close HDF5 data space for tree \""
+                 << tree->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
 
     // Close out the HDF5 data type
-    H5Tclose(hdf5_type);
+    if(H5Tclose(hdf5_type) < 0)
+    {
+        if(verbose)
+        {
+            cerr << "ERROR: Couldn't close HDF5 data type for tree \""
+                 << tree->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
 
     // Tell CINT to deallocate the instance of the structure
     command.str("");

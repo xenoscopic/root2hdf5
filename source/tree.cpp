@@ -400,6 +400,8 @@ bool root2hdf5::tree::convert(TTree *tree,
         hdf5_struct
     );
 
+    // TODO: Create the dataset in the target group
+
     // Loop through the tree, getting every entry, calling the converter, and
     // then writing it to the HDF5 dataset
     // TODO: Implement

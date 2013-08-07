@@ -50,11 +50,18 @@ include_directories(${PROJECT_SOURCE_DIR}/source)
 set(library_sources
     source/options.cpp
     source/convert.cpp
-    source/type.cpp
-    source/tree.cpp)
+    source/tree.cpp
+    source/tree/type.cpp
+    source/tree/walk.cpp
+    source/tree/struct.cpp
+    source/tree/convert.cpp)
 add_library(root2hdf5
             STATIC
             ${library_sources})
+target_link_libraries(root2hdf5
+                      ${ROOT_LIBRARIES}
+                      ${HDF5_LIBRARIES}
+                      ${BOOST_LINK_TARGETS})
 
 # Create the main target
 add_executable(root2hdf5-bin
@@ -70,12 +77,22 @@ target_link_libraries(root2hdf5-bin
                       ${BOOST_LINK_TARGETS})
 
 # Create test targets
-add_executable(test_type
-               test/test_type.cpp)
-target_link_libraries(test_type
+add_executable(test_tree_type
+               test/test_tree_type.cpp)
+target_link_libraries(test_tree_type
                       root2hdf5
                       ${ROOT_LIBRARIES}
                       ${HDF5_LIBRARIES}
                       ${BOOST_LINK_TARGETS}
                       ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
-add_test(type test_type)
+add_test(tree_type test_tree_type)
+
+add_executable(test_tree_walk
+               test/test_tree_walk.cpp)
+target_link_libraries(test_tree_walk
+                      root2hdf5
+                      ${ROOT_LIBRARIES}
+                      ${HDF5_LIBRARIES}
+                      ${BOOST_LINK_TARGETS}
+                      ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+add_test(tree_walk test_tree_walk)

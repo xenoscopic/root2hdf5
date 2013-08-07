@@ -26,7 +26,7 @@
 
 // root2hdf5 includes
 #include "options.h"
-#include "type.h"
+#include "tree/type.h"
 
 
 // Standard namespaces
@@ -38,7 +38,7 @@ namespace fs = boost::filesystem;
 // root2hdf5 namespaces
 using namespace root2hdf5::tree;
 using namespace root2hdf5::options;
-using namespace root2hdf5::type;
+using namespace root2hdf5::tree::type;
 
 
 // Private function and mapping declarations

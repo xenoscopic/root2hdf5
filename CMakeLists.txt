@@ -50,11 +50,14 @@ include_directories(${PROJECT_SOURCE_DIR}/source)
 set(library_sources
     source/options.cpp
     source/convert.cpp
+    source/type.cpp
     source/tree.cpp
-    source/tree/type.cpp
     source/tree/walk.cpp
     source/tree/structure.cpp
-    source/tree/convert.cpp)
+    source/tree/convert.cpp
+    source/tree/leaf_converters.cpp
+    source/tree/leaf_converters/scalar_converter.cpp
+    source/tree/leaf_converters/vector_converter.cpp)
 add_library(root2hdf5
             STATIC
             ${library_sources})

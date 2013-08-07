@@ -1,5 +1,8 @@
 #include "convert.h"
 
+// C Standard includes
+#include <cstring>
+
 // Standard includes
 #include <iostream>
 
@@ -29,8 +32,31 @@ bool root2hdf5::convert::convert(TDirectory *directory,
 
     // Go through the keys, handling them by their type
     TKey *key = NULL;
+    TKey *previous = NULL;
     while((key = (TKey *)next_key()))
     {
+        // ROOT uses this stupid concept called a "cycle number" to save
+        // multiple header-like objects for the same object.  For example, a
+        // TTree named "bob" might appear as "bob;1" and "bob;2".  Both point to
+        // the same object, but "bob;2" is the later, complete revision.  This
+        // happens in the TTree case because TTree's auto-save to their file
+        // every 100 MB.  Everytime an autosave happens, the previous autosave
+        // cycle numbers are removed, but when TFile::Write is called, the last
+        // autosave cycle number remains (who knows why...) and a new biggest
+        // cycle number is created.  Thus, we only convert the highest cycle
+        // number for each key (TIter will go from highest cycle number to
+        // lowest number, so if we've already processed a key with this name, we
+        // can skip any duplicately named ones).
+        // TODO: This may not be the correct procedure for every data-type, so
+        // we may need to reevaluate this filtering procedure in the future.
+        if(previous != NULL && strcmp(key->GetName(), previous->GetName()) == 0)
+        {
+            continue;
+        }
+
+        // Record the previously processed key
+        previous = key;
+
         // Grab the object and its type
         TObject *object = key->ReadObj();
         TClass *object_type = object->IsA();
@@ -38,7 +64,11 @@ bool root2hdf5::convert::convert(TDirectory *directory,
         // Print information if requested
         if(verbose)
         {
-            cout << "Processing " << key->GetName() << endl;
+            cout << "Processing "
+                 << key->GetName()
+                 << ";"
+                 << key->GetCycle()
+                 << endl;
         }
 
         // Switch based on type

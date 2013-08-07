@@ -53,7 +53,7 @@ set(library_sources
     source/tree.cpp
     source/tree/type.cpp
     source/tree/walk.cpp
-    source/tree/struct.cpp
+    source/tree/structure.cpp
     source/tree/convert.cpp)
 add_library(root2hdf5
             STATIC
@@ -96,3 +96,13 @@ target_link_libraries(test_tree_walk
                       ${BOOST_LINK_TARGETS}
                       ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
 add_test(tree_walk test_tree_walk)
+
+add_executable(test_tree_structure
+               test/test_tree_structure.cpp)
+target_link_libraries(test_tree_structure
+                      root2hdf5
+                      ${ROOT_LIBRARIES}
+                      ${HDF5_LIBRARIES}
+                      ${BOOST_LINK_TARGETS}
+                      ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+add_test(tree_structure test_tree_structure)

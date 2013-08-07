@@ -18,7 +18,7 @@ namespace root2hdf5
     {
         namespace walk
         {
-            // This method is used internall to implement the recursive walking
+            // This method is used internally to implement the recursive walking
             bool walk_branch(TBranch *branch,
                              branch_processor branch_opener,
                              branch_processor branch_closer,

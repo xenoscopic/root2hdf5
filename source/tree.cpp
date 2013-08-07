@@ -27,6 +27,7 @@
 // root2hdf5 includes
 #include "options.h"
 #include "tree/type.h"
+#include "tree/structure.h"
 
 
 // Standard namespaces
@@ -39,6 +40,7 @@ namespace fs = boost::filesystem;
 using namespace root2hdf5::tree;
 using namespace root2hdf5::options;
 using namespace root2hdf5::tree::type;
+using namespace root2hdf5::tree::structure;
 
 
 // Private function and mapping declarations
@@ -96,34 +98,6 @@ namespace root2hdf5
         // would be).
         size_t sizeof_member_in_type_by_name(string type_name,
                                              string member_name);
-
-        // Converts a TLeaf into a string representation of a member suitable
-        // for inclusion in a C struct representing an HDF5 compound data type
-        // and inserts it into the stringstream used to build up the code for
-        // the C struct.  The resulting type may not match the original branch
-        // type (e.g. in the case of non-scalar types such as vector<...>), but
-        // the map_branch_and_build_converter function will allocate an 
-        // intermediate buffer for the TTree to load its data into, a converter
-        // function which will convert the data from the intermediate buffer
-        // into the HDF5 struct, and a cleanup function to remove the
-        // intermediate buffer.
-        bool insert_hdf5_struct_member_for_leaf(stringstream & container,
-                                                TLeaf *leaf);
-
-        // Converts a TBranch into a string representation of a member suitable
-        // for inclusion in a C struct representing an HDF5 compound data type
-        // and inserts it into the stringstream used to build up the code for
-        // the C struct.  This function is recursive and will call itself for
-        // any subbranches, otherwise calling insert_hdf5_struct_member_for_leaf
-        // to handle individual leaves.
-        bool insert_hdf5_struct_member_for_branch(stringstream & container,
-                                                  TBranch *branch);
-
-        // Converts a TTree (and its branches) to a string representing a struct
-        // suitable for use as a buffer for an HDF5 compound type.  The function
-        // returns a pair of the form:
-        //      (success, struct_type_name, code_for_struct)
-        tuple<bool, string, string> hdf5_struct_for_tree(TTree *tree);
 
         // Type for handling conversion/resource-deallocation callbacks
         typedef std::function<bool()> callback;
@@ -260,140 +234,6 @@ size_t root2hdf5::tree::sizeof_member_in_type_by_name(string type_name,
          + member_name 
          + ");").c_str()
     );
-}
-
-
-bool root2hdf5::tree::insert_hdf5_struct_member_for_leaf(
-    stringstream & container,
-    TLeaf *leaf
-)
-{
-    // Grab the type name
-    string type_name(leaf->GetTypeName());
-
-    // Check if the leaf is a scalar type
-    hid_t scalar_hdf5_type 
-        = root_type_name_to_scalar_hdf5_type(type_name);
-    if(scalar_hdf5_type != -1)
-    {
-        // This is a scalar type, so just insert the ROOT type
-        container << type_name << " " << leaf->GetName() << ";";
-        return true;
-    }
-
-    // Check if the leaf is a vector type
-    root_vector_conversion vector_conversion
-        = root_type_name_to_vector_hdf5_type(type_name);
-    if(vector_conversion.valid)
-    {
-        // TODO: Insert the vector type
-        return true;
-    }
-
-    // Otherwise this is an unsupported-but-ignorable type, so don't error, but
-    // print a warning if we are in verbose mode
-    if(verbose)
-    {
-        cerr << "WARNING: Leaf \"" << leaf->GetName() << "\" has an "
-             << "unknown type \"" << type_name << "\" - skipping";
-    }
-
-    return true;
-}
-
-
-bool root2hdf5::tree::insert_hdf5_struct_member_for_branch(
-    stringstream & container,
-    TBranch *branch
-)
-{
-    // Create a stringstream to contain the struct for the branch
-    stringstream result;
-
-    // First, check if this is just a scalar branch (i.e. single-leaf with no
-    // subbranches).  If that is the case, then we just return a single member
-    // for the parent struct.
-    if(branch->GetListOfLeaves()->GetEntries() == 1 
-       && branch->GetListOfBranches()->GetEntries() == 0)
-    {
-        // This is a single scalar branch, so insert it directly into the root
-        // of the parent struct.
-        return insert_hdf5_struct_member_for_leaf(
-            container,
-            branch->GetLeaf(branch->GetName())
-        );
-    }
-    else
-    {
-        // Otherwise, this is a more complex branch, possibly containing
-        // multiple leaves and/or subbranches.  We generate a struct member to
-        // insert into the parent struct.
-        container << "struct{";
-        
-        // First add our leaves
-        TIter next_leaf(branch->GetListOfLeaves());
-        TLeaf *leaf = NULL;
-        while((leaf = (TLeaf *)next_leaf()))
-        {
-            if(!insert_hdf5_struct_member_for_leaf(container, leaf))
-            {
-                // The function failed, it should have printed an error message
-                // if necessary, so just return
-                return false;
-            }
-        }
-
-        // Then recurse into subbranches
-        TIter next_subbranch(branch->GetListOfBranches());
-        TBranch *subbranch = NULL;
-        while((subbranch = (TBranch *)next_subbranch()))
-        {
-            if(!insert_hdf5_struct_member_for_branch(container, subbranch))
-            {
-                // The function failed, it should have printed an error message
-                // if necessary, so just return
-                return false;
-            }
-        }
-
-        // And close off the struct
-        container << "}" << branch->GetName() << ";";
-
-        return true;
-    }
-}
-
-
-tuple<bool, string, string> root2hdf5::tree::hdf5_struct_for_tree(TTree *tree)
-{
-    // Create a stringstream to contain the outer struct
-    stringstream struct_name;
-    stringstream struct_code;
-
-    // Set up the outer struct stuff
-    struct_name << "tree_" << (long int)tree;
-    struct_code << "struct " << struct_name.str() << "{";
-
-    // Loop over the branches of the tree and add their members
-    TIter next_branch(tree->GetListOfBranches());
-    TBranch *branch = NULL;
-    while((branch = (TBranch *)next_branch()))
-    {
-        // Add the code for the branch
-        if(!insert_hdf5_struct_member_for_branch(struct_code, branch))
-        {
-            // If things fail, the insertion method should have printed an error
-            // if necessary, so just return
-            return make_tuple(false, "", "");
-        }
-    }
-
-    // Close up the struct
-    struct_code << "};";
-
-    return make_tuple(true,
-                      struct_name.str(),
-                      struct_code.str());
 }
 
 
@@ -694,14 +534,14 @@ bool root2hdf5::tree::convert(TTree *tree,
 {
     // Create a string which represents a struct that we can use to construct
     // the HDF5 composite data type
-    auto hdf5_struct_success_name_code = hdf5_struct_for_tree(tree);
-    if(!get<0>(hdf5_struct_success_name_code))
+    string hdf5_struct_name = struct_type_name_for_tree(tree);
+    string hdf5_struct_code = struct_code_for_tree(tree);
+    if(hdf5_struct_code == "")
     {
-        // Conversion method should have printed an error, just return
+        // The struct code generation failed (and it should have printed an
+        // error), so just return
         return false;
     }
-    string hdf5_struct_name = get<1>(hdf5_struct_success_name_code);
-    string hdf5_struct_code = get<2>(hdf5_struct_success_name_code);
     cout << hdf5_struct_code << endl;
 
     // Tell CINT about the structure

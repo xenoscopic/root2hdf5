@@ -7,9 +7,6 @@
 #include <vector>
 #include <string>
 
-// Boost includes
-#include <boost/bind.hpp>
-
 // ROOT includes
 #include <TTree.h>
 
@@ -19,9 +16,6 @@
 
 // Standard namespaces
 using namespace std;
-
-// Boost namespaces
-using namespace boost;
 
 // root2hdf5 namespaces
 using namespace root2hdf5::tree::walk;

@@ -45,8 +45,10 @@ BOOST_AUTO_TEST_CASE(test_walk_tree)
 
     // Test code generation
     string struct_name = struct_type_name_for_tree(tree);
+    string struct_code;
+    BOOST_REQUIRE(create_struct_code_for_tree(tree, &struct_code));
     BOOST_CHECK_EQUAL(
-        struct_code_for_tree(tree),
+        struct_code,
         string("struct ") + struct_name + 
         "{Int_t branch_leaf_1;Double_t branch_leaf_2;"
         "struct{Int_t leaf_1;Bool_t leaf_2;}branch_3;};"

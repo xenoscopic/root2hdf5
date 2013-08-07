@@ -2,7 +2,6 @@
 
 // Standard includes
 #include <iostream>
-#include <fstream>
 #include <map>
 #include <string>
 #include <sstream>
@@ -10,14 +9,6 @@
 #include <functional>
 #include <vector>
 #include <tuple>
-
-// Boost includes
-// HACK: Need to define this macro to tell Boost not to use deprecated
-// Boost.System constructs which result in unused-variable errors.
-#ifndef BOOST_SYSTEM_NO_DEPRECATED
-#define BOOST_SYSTEM_NO_DEPRECATED 1
-#endif
-#include <boost/filesystem.hpp>
 
 // ROOT includes
 #include <TROOT.h>
@@ -33,9 +24,6 @@
 // Standard namespaces
 using namespace std;
 
-// Boost namespace aliases
-namespace fs = boost::filesystem;
-
 // root2hdf5 namespaces
 using namespace root2hdf5::tree;
 using namespace root2hdf5::options;
@@ -48,14 +36,6 @@ namespace root2hdf5
 {
     namespace tree
     {
-        // This method provides a convenient interface for executing code via
-        // CINT which might be too long for the TROOT::ProcessLine method (which
-        // has a limit of 2043 characters).  The method creates a temporary file
-        // in which to write the code, has CINT load the file from disk, and
-        // then cleans up the temporary file.  This method returns true on
-        // success and false on failure.
-        bool process_long_line(const string & long_line);
-
         // This method returns the offset of the member in a struct using CINT.
         // E.g. with the struct
         //
@@ -178,44 +158,6 @@ namespace root2hdf5
 }
 
 
-bool root2hdf5::tree::process_long_line(const string & long_line)
-{
-    // TODO: It might be better to add some more stringent error checking in
-    // here, but most of these things are such robust, low-level OS things that
-    // if they fail, the user's environment is probably already melting around
-    // them, so just assume the temporary file creation/writing/deletion will
-    // work.  However, still check LoadMacro's return code, because it is easy
-    // and because we can't trust ROOT.
-
-    // Generate a temporary path to write the line to
-    fs::path temp_path = fs::temp_directory_path() 
-                         / fs::unique_path("%%%%-%%%%-%%%%-%%%%.cpp");
-
-    // Write the line to the temporary file.  It is very important that we
-    // include a newline at the end or ROOT's crappy interpreter will give an
-    // "unexpected EOF" error sporadically.
-    ofstream output(temp_path.c_str(), ofstream::out);
-    output << long_line << endl;
-    output.close();
-
-    // Process the line
-    if(gROOT->LoadMacro((temp_path.native()).c_str()) < 0)
-    {
-        if(verbose)
-        {
-            cerr << "ERROR: Unable to load temporary macro" << endl;
-        }
-
-        return false;
-    }
-
-    // Remove the file
-    fs::remove(temp_path);
-    
-    return true;
-}
-
-
 size_t root2hdf5::tree::offsetof_member_in_type_by_name(string type_name,
                                                         string member_name)
 {
@@ -223,6 +165,7 @@ size_t root2hdf5::tree::offsetof_member_in_type_by_name(string type_name,
         (string("offsetof(") + type_name + "," + member_name + ");").c_str()
     );
 }
+
 
 size_t root2hdf5::tree::sizeof_member_in_type_by_name(string type_name,
                                                       string member_name)
@@ -535,27 +478,13 @@ bool root2hdf5::tree::convert(TTree *tree,
     // Create a string which represents a struct that we can use to construct
     // the HDF5 composite data type
     string hdf5_struct_name = struct_type_name_for_tree(tree);
-    string hdf5_struct_code = struct_code_for_tree(tree);
-    if(hdf5_struct_code == "")
+    if(!create_struct_code_for_tree(tree))
     {
         // The struct code generation failed (and it should have printed an
         // error), so just return
         return false;
     }
-    cout << hdf5_struct_code << endl;
-
-    // Tell CINT about the structure
-    if(!process_long_line(hdf5_struct_code))
-    {
-        if(verbose)
-        {
-            cerr << "ERROR: Unable to generate temporary struct for converting "
-                 << "tree \"" << tree->GetName() << "\"";
-        }
-
-        return false;
-    }
-
+    
     // TODO: Perhaps find some way to check the code being executed here,
     // although it is probably not essential since ROOT will probably crash
     // internally before returning anything.

@@ -49,12 +49,14 @@ include_directories(${PROJECT_SOURCE_DIR}/source)
 # Create the library target
 set(library_sources
     source/options.cpp
+    source/cint.cpp
     source/convert.cpp
     source/type.cpp
     source/tree.cpp
     source/tree/walk.cpp
     source/tree/structure.cpp
-    source/tree/convert.cpp
+    source/tree/map_hdf5.cpp
+    source/tree/map_root.cpp
     source/tree/leaf_converters.cpp
     source/tree/leaf_converters/scalar_converter.cpp
     source/tree/leaf_converters/vector_converter.cpp)
@@ -80,15 +82,15 @@ target_link_libraries(root2hdf5-bin
                       ${BOOST_LINK_TARGETS})
 
 # Create test targets
-add_executable(test_tree_type
-               test/test_tree_type.cpp)
-target_link_libraries(test_tree_type
+add_executable(test_type
+               test/test_type.cpp)
+target_link_libraries(test_type
                       root2hdf5
                       ${ROOT_LIBRARIES}
                       ${HDF5_LIBRARIES}
                       ${BOOST_LINK_TARGETS}
                       ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
-add_test(tree_type test_tree_type)
+add_test(type test_type)
 
 add_executable(test_tree_walk
                test/test_tree_walk.cpp)

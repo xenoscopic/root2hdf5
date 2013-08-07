@@ -1,14 +1,14 @@
 #define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE test_tree_type
+#define BOOST_TEST_MODULE test_type
 #include <boost/test/unit_test.hpp>
 
 
 // root2hdf5 includes
-#include "tree/type.h"
+#include "type.h"
 
 
 // root2hdf5 namespaces
-using namespace root2hdf5::tree::type;
+using namespace root2hdf5::type;
 
 
 BOOST_AUTO_TEST_CASE(test_root_type_name_to_scalar_hdf5_type)

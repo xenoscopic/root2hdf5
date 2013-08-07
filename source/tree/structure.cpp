@@ -9,6 +9,7 @@
 
 // root2hdf5 includes
 #include "options.h"
+#include "cint.h"
 #include "tree/walk.h"
 #include "tree/leaf_converters.h"
 
@@ -19,6 +20,7 @@ using namespace std;
 // root2hdf5 namespaces
 using namespace root2hdf5::tree::structure;
 using namespace root2hdf5::options;
+using namespace root2hdf5::cint;
 using namespace root2hdf5::tree::walk;
 using namespace root2hdf5::tree::leaf_converters;
 
@@ -35,29 +37,29 @@ string root2hdf5::tree::structure::struct_type_name_for_tree(TTree *tree)
 }
 
 
-string
-root2hdf5::tree::structure::struct_code_for_tree(TTree *tree)
+bool root2hdf5::tree::structure::create_struct_code_for_tree(TTree *tree,
+                                                             string *code)
 {
-    // Create a stringstream to build the result
-    stringstream result;
+    // Create a stringstream to build the structure
+    stringstream structure;
 
     // Create the outer structure
-    result << "struct " << struct_type_name_for_tree(tree) << "{";
+    structure << "struct " << struct_type_name_for_tree(tree) << "{";
 
     // Walk the tree and add submembers
     bool success = walk_tree(
         tree,
-        [&result](TBranch *branch) -> bool {
+        [&structure](TBranch *branch) -> bool {
             // Hide unused variable warning
             (void)branch;
-            result << "struct{";
+            structure << "struct{";
             return true;
         },
-        [&result](TBranch *branch) -> bool {
-            result << "}" << branch->GetName() << ";";
+        [&structure](TBranch *branch) -> bool {
+            structure << "}" << branch->GetName() << ";";
             return true;
         },
-        [&result](TLeaf *leaf) -> bool {
+        [&structure](TLeaf *leaf) -> bool {
             // Find a leaf converter
             leaf_converter *converter = find_converter(leaf);
 
@@ -84,21 +86,40 @@ root2hdf5::tree::structure::struct_code_for_tree(TTree *tree)
             }
 
             // Add it's structure member
-            result << converter->member_for_conversion_struct(leaf);
+            structure << converter->member_for_conversion_struct(leaf);
 
             return true;
         }
     );
 
-    // If things failed during walking, return a bogus result
+    // If things failed during walking, return a bogus structure
     if(!success)
     {
-        return "";
+        if(verbose)
+        {
+            cerr << "ERROR: Unable to generate temporary struct for converting "
+             << "tree \"" << tree->GetName() << "\"";
+        }
+        return false;
     }
 
     // Close the outer structure
-    result << "};";
+    structure << "};";
 
-    // All done
-    return result.str();
+    // If the user wants a copy of the code, give it to them, regardless of
+    // whether or not it compiles
+    if(code != NULL)
+    {
+        *code = structure.str();
+    }
+
+    // Inform CINT about the structure
+    bool result = process_long_line(structure.str());
+    if(!result && verbose)
+    {
+        cerr << "ERROR: Unable to compile temporary struct for converting tree "
+             << "\"" << tree->GetName() << "\"";
+    }
+
+    return result;
 }

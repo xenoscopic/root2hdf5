@@ -36,8 +36,7 @@ namespace root2hdf5
             //      (hdf5_type_id, hdf5_type_deallocator)
             // The deallocator must be called after use of the type is complete
             // in order to close the type and any subtypes.  In the event of
-            // failure, the hdf5_type_id will be set to -1, and the deallocator
-            // should be called before continuing.
+            // failure, the hdf5_type_id will be set to -1.
             boost::tuple<hid_t, hdf5_type_deallocator>
             hdf5_type_for_tree(TTree *tree);
         }

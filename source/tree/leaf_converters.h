@@ -12,6 +12,7 @@
 
 // root2hdf5 includes
 #include "tree/map_hdf5.h"
+#include "tree/map_root.h"
 
 
 namespace root2hdf5
@@ -46,8 +47,21 @@ namespace root2hdf5
                     std::vector<
                         root2hdf5::tree::map_hdf5::hdf5_type_deallocator
                     > &
-                )> hdf5_type;
+                )> hdf5_type_for_leaf;
 
+                // This function will map the specified TLeaf into the target
+                // address.  If necessary, the leaf converter may allocate an
+                // intermediate buffer along with a converter and deallocator
+                // callback which it will add to the provided lists.  Returns
+                // true on success, false on failure.
+                std::function<bool(
+                    TLeaf *,
+                    void *,
+                    std::vector<root2hdf5::tree::map_root::root_converter> &,
+                    std::vector<
+                        root2hdf5::tree::map_root::root_resource_deallocator
+                    > &
+                )> map_leaf_and_build_converter;
 
             };
 

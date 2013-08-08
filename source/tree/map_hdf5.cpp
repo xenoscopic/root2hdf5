@@ -3,7 +3,6 @@
 // Standard includes
 #include <string>
 #include <vector>
-#include <functional>
 
 // Boost includes
 #include <boost/algorithm/string.hpp>
@@ -181,7 +180,7 @@ root2hdf5::tree::map_hdf5::hdf5_type_for_tree(TTree *tree)
                 = leaf_offset_in_struct - path_offset_stack.back();
 
             // Calculate the HDF5 type for the leaf
-            hid_t leaf_type = converter->hdf5_type(leaf, deallocators);
+            hid_t leaf_type = converter->hdf5_type_for_leaf(leaf, deallocators);
 
             // Insert the HDF5 type into the parent compound type
             if(H5Tinsert(hdf5_type_stack.back(),
@@ -263,6 +262,8 @@ root2hdf5::tree::map_hdf5::hdf5_type_for_tree(TTree *tree)
             it != deallocators.rend();
             it++)
         {
+            // Iterate over deallocators in reverse so we close types in the
+            // opposite order of how we open them
             if(!(*it)())
             {
                 // TODO: Should we continue if one deallocator fails?

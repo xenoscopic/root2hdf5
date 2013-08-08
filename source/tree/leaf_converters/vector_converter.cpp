@@ -17,6 +17,7 @@ using namespace boost;
 using namespace root2hdf5::tree::leaf_converters::vector_converter;
 using namespace root2hdf5::tree::leaf_converters;
 using namespace root2hdf5::tree::map_hdf5;
+using namespace root2hdf5::tree::map_root;
 using namespace root2hdf5::type;
 
 
@@ -85,9 +86,22 @@ string vector_converter::member_for_conversion_struct(TLeaf *leaf)
 }
 
 
-hid_t vector_converter::hdf5_type(TLeaf * leaf, 
-                                  vector<hdf5_type_deallocator> & deallocators)
+hid_t vector_converter::hdf5_type_for_leaf(
+    TLeaf * leaf, 
+    vector<hdf5_type_deallocator> & deallocators
+)
 {
     // TODO: Implement
     return -1;
+}
+
+bool vector_converter::map_leaf_and_build_converter(
+    TLeaf *leaf,
+    void *address,
+    vector<root_converter> & converters,
+    vector<root_resource_deallocator> & deallocators
+)
+{
+    // TODO: Implement
+    return true;
 }

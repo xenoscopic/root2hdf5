@@ -20,6 +20,7 @@
 #include "options.h"
 #include "tree/structure.h"
 #include "tree/map_hdf5.h"
+#include "tree/map_root.h"
 
 
 // Standard namespaces
@@ -30,6 +31,7 @@ using namespace root2hdf5::tree;
 using namespace root2hdf5::options;
 using namespace root2hdf5::tree::structure;
 using namespace root2hdf5::tree::map_hdf5;
+using namespace root2hdf5::tree::map_root;
 
 
 bool root2hdf5::tree::convert(TTree *tree,
@@ -40,29 +42,38 @@ bool root2hdf5::tree::convert(TTree *tree,
     string hdf5_struct_name = struct_type_name_for_tree(tree);
     if(!create_struct_code_for_tree(tree))
     {
-        // The struct code generation failed (and it should have printed an
-        // error), so just return
+        // The struct code generation failed, and it should have printed an
+        // error if necessary, so just bail
         return false;
     }
 
     // Create an HDF5 type which can be used to create our dataset
     hid_t hdf5_type = -1;
-    hdf5_type_deallocator type_deallocator;
-    boost::tie(hdf5_type, type_deallocator)
+    hdf5_type_deallocator hdf5_deallocator;
+    boost::tie(hdf5_type, hdf5_deallocator)
         = hdf5_type_for_tree(tree);
     if(hdf5_type == -1)
     {
-        // HDF5 type generation has failed.  We need to call the deallocator,
-        // but any error messages should have already been printed.
-        type_deallocator();
-
+        // HDF5 type generation has failed, and it should have already printed a
+        // message if necessary, so just bail
         return false;
     }
     
     // Tell CINT to allocate an instance of the structure
     void *hdf5_struct = allocate_instance_by_name(hdf5_struct_name);
 
-    // TODO: Map the ROOT tree into the hdf5_struct instance
+    // Map the ROOT tree into the hdf5_struct instance
+    bool root_map_success = false;
+    root_converter converter;
+    root_resource_deallocator root_deallocator;
+    boost::tie(root_map_success, converter, root_deallocator)
+        = map_root_tree_into_struct_and_build_converter(tree, hdf5_struct);
+    if(!root_map_success)
+    {
+        // ROOT mapping has failed, and it should have already printed a message
+        // if necessary, so just bail
+        return false;
+    }
 
     // Create the dataspace with the same dimensions as the tree and a
     // single-element dataset to represent the in-memory space
@@ -71,6 +82,17 @@ bool root2hdf5::tree::convert(TTree *tree,
                                         // struct in-memory
     hid_t hdf5_file_space = H5Screate_simple(1, &n_entries, NULL);
     hid_t hdf5_memory_space = H5Screate_simple(1, &n_memory_entries, NULL);
+    if(hdf5_file_space < 0 || hdf5_memory_space < 0)
+    {
+        // Data space creation failed
+        if(verbose)
+        {
+            cerr << "ERROR: Unable to create HDF5 data spaces for tree \""
+                 << tree->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
 
     // Create the dataset
     hid_t hdf5_dataset = H5Dcreate2(parent_destination,
@@ -80,6 +102,17 @@ bool root2hdf5::tree::convert(TTree *tree,
                                     H5P_DEFAULT,
                                     H5P_DEFAULT,
                                     H5P_DEFAULT);
+    if(hdf5_dataset < 0)
+    {
+        // Dataset creation failed
+        if(verbose)
+        {
+            cerr << "ERROR: Unable to create HDF5 dataset for tree \""
+                 << tree->GetName() << "\"" << endl;
+        }
+
+        return false;
+    }
 
     // Loop through the tree, getting every entry, calling the converter, and
     // then writing it to the HDF5 dataset
@@ -100,12 +133,12 @@ bool root2hdf5::tree::convert(TTree *tree,
         }
 
         // TODO: Call the converter
-        /*if(!converter())
+        if(!converter())
         {
             // If the converter failed, it should have printed a message if
             // necessary, so just return
             return false;
-        }*/
+        }
 
         // Do the HDF5 fill.  First, select the single event hyperslab to fill,
         // and then write!
@@ -178,17 +211,23 @@ bool root2hdf5::tree::convert(TTree *tree,
         return false;
     }
 
-    // TODO: Call the root mapping deallocator
+    // Call the root mapping deallocator
+    if(!root_deallocator())
+    {
+        // The deallocator should have already printed an error if necessary, so
+        // just bail
+        return false;
+    }
 
     // Tell CINT to deallocate the instance of the structure
     deallocate_instance_by_name_and_location(hdf5_struct_name, hdf5_struct);
     hdf5_struct = NULL;
 
     // Call the HDF5 type deallocator
-    if(!type_deallocator())
+    if(!hdf5_deallocator())
     {
         // The deallocator should have already printed an error if necessary, so
-        // just return
+        // just bail
         return false;
     }
 

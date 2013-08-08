@@ -27,13 +27,15 @@ namespace root2hdf5
                 // Scalar converter
                 {
                     scalar_converter::can_handle,
-                    scalar_converter::member_for_conversion_struct
+                    scalar_converter::member_for_conversion_struct,
+                    scalar_converter::hdf5_type
                 },
 
                 // Vector converter
                 {
                     vector_converter::can_handle,
-                    vector_converter::member_for_conversion_struct
+                    vector_converter::member_for_conversion_struct,
+                    vector_converter::hdf5_type
                 }
             };
         }

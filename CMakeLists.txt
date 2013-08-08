@@ -111,3 +111,13 @@ target_link_libraries(test_tree_structure
                       ${BOOST_LINK_TARGETS}
                       ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
 add_test(tree_structure test_tree_structure)
+
+add_executable(test_tree_vector_converter
+               test/test_tree_vector_converter.cpp)
+target_link_libraries(test_tree_vector_converter
+                      root2hdf5
+                      ${ROOT_LIBRARIES}
+                      ${HDF5_LIBRARIES}
+                      ${BOOST_LINK_TARGETS}
+                      ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
+add_test(tree_vector_converter test_tree_vector_converter)

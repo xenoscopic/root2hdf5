@@ -53,12 +53,12 @@ BOOST_AUTO_TEST_CASE(test_walk_tree)
             map.push_back(string("open ") + branch->GetName());
             return true;
         },
-        [&map](TBranch *branch) -> bool {
-            map.push_back(string("close ") + branch->GetName());
-            return true;
-        },
         [&map](TLeaf *leaf) -> bool {
             map.push_back(string("process ") + leaf->GetName());
+            return true;
+        },
+        [&map](TBranch *branch) -> bool {
+            map.push_back(string("close ") + branch->GetName());
             return true;
         }
     );

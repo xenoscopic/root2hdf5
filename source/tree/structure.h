@@ -26,6 +26,68 @@ namespace root2hdf5
             // testing the generated code and not strictly-necessary
             bool create_struct_code_for_tree(TTree *tree,
                                              std::string *code = NULL);
+
+            // This method will allocate an instance of the type specified by
+            // name and return its location in memory.
+            void * allocate_instance_by_name(std::string type_name);
+
+            // This method will deallocate an instance of the type specified
+            // by name at the specified location in memory.
+            void deallocate_instance_by_name_and_location(std::string type_name,
+                                                          void *location);
+
+            // This method returns the offset of the member in a struct using
+            // CINT.
+            // E.g. with the struct
+            //
+            //      struct TestStruct
+            //      {
+            //          int a;
+            //          int b;
+            //          struct {
+            //              float d;
+            //              double e;
+            //          } c;
+            //      };
+            //
+            // One could do:
+            //
+            //      offsetof_member_in_type_by_name("TestStruct", "c")
+            //
+            // and receive 8 (or whatever the platform-dependent value would
+            // be).
+            size_t offsetof_member_in_type_by_name(std::string type_name,
+                                                   std::string member_name);
+
+            // This method returns the size of the member of a struct using 
+            // CINT.  E.g. with the struct
+            //
+            //      struct TestStruct
+            //      {
+            //          int a;
+            //          int b;
+            //          struct {
+            //              float d;
+            //              double e;
+            //          } c;
+            //      };
+            //
+            // One could do:
+            //
+            //      sizeof_member_in_type_by_name("TestStruct", "c");
+            //
+            // and receive 16 (or whatever the platform/padding-dependent value
+            // would be).
+            size_t sizeof_member_in_type_by_name(std::string type_name,
+                                                 std::string member_name);
+
+            // This method returns the size of a type by name.  E.g.
+            //
+            //      sizeof_type_by_name("int");
+            //
+            // will return 4 (or whatever the platform/padding-dependent value
+            // would be)
+            size_t sizeof_type_by_name(std::string type_name);
         }
     }
 }

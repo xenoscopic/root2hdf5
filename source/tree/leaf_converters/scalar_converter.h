@@ -1,10 +1,7 @@
 #pragma once
 
-// Standard includes
-#include <string>
-
-// ROOT includes
-#include <TLeaf.h>
+// root2hdf5 includes
+#include "tree/leaf_converters.h"
 
 
 namespace root2hdf5
@@ -17,6 +14,12 @@ namespace root2hdf5
             {
                 bool can_handle(TLeaf *leaf);
                 std::string member_for_conversion_struct(TLeaf *leaf);
+                hid_t hdf5_type(
+                    TLeaf * leaf, 
+                    std::vector<
+                        root2hdf5::tree::map_hdf5::hdf5_type_deallocator
+                    > & deallocators
+                );
             }
         }
     }

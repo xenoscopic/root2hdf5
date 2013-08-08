@@ -32,8 +32,8 @@ namespace root2hdf5
             // processed.
             bool walk_tree(TTree *tree,
                            branch_processor branch_opener,
-                           branch_processor branch_closer,
-                           leaf_processor leaf_handler);
+                           leaf_processor leaf_handler,
+                           branch_processor branch_closer);
         }
     }
 }

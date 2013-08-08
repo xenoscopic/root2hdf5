@@ -2,7 +2,12 @@
 
 // Standard includes
 #include <functional>
-#include <utility>
+
+// HACK: Use Boost.Tuple instead of std::tuple because at the moment, the LLVM-
+// provided libc++ doesn't support the std::tuple, and Boost.Tuple is
+// effectively the same thing.
+// Boost includes
+#include <boost/tuple/tuple.hpp>
 
 // ROOT includes
 #include <TTree.h>
@@ -24,6 +29,7 @@ namespace root2hdf5
             // NOTE: Before calling this method, the
             // root2hdf5::structure::struct_code_for_tree method must have been
             // called to generate a CINT-known structure for mapping data into.
+
             // Generates an HDF5 compound data type representing the supportable
             // branches/leaves in the tree.  This method returns a pair of the
             // form:
@@ -32,7 +38,7 @@ namespace root2hdf5
             // in order to close the type and any subtypes.  In the event of
             // failure, the hdf5_type_id will be set to -1, and the deallocator
             // should be called before continuing.
-            std::pair<hid_t, hdf5_type_deallocator> 
+            boost::tuple<hid_t, hdf5_type_deallocator>
             hdf5_type_for_tree(TTree *tree);
         }
     }

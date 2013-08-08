@@ -21,8 +21,8 @@ namespace root2hdf5
             // This method is used internally to implement the recursive walking
             bool walk_branch(TBranch *branch,
                              branch_processor branch_opener,
-                             branch_processor branch_closer,
-                             leaf_processor leaf_handler);
+                             leaf_processor leaf_handler,
+                             branch_processor branch_closer);
         }
     }
 }
@@ -30,8 +30,8 @@ namespace root2hdf5
 
 bool root2hdf5::tree::walk::walk_branch(TBranch *branch,
                                         branch_processor branch_opener,
-                                        branch_processor branch_closer,
-                                        leaf_processor leaf_handler)
+                                        leaf_processor leaf_handler,
+                                        branch_processor branch_closer)
 {
     // Grab the list of leaves and subbranches for the branch
     TObjArray *leaves = branch->GetListOfLeaves();
@@ -68,7 +68,7 @@ bool root2hdf5::tree::walk::walk_branch(TBranch *branch,
     TBranch *subbranch = NULL;
     while((subbranch = (TBranch *)next_subbranch()))
     {
-        if(!walk_branch(subbranch, branch_opener, branch_closer, leaf_handler))
+        if(!walk_branch(subbranch, branch_opener, leaf_handler, branch_closer))
         {
             return false;
         }
@@ -81,15 +81,15 @@ bool root2hdf5::tree::walk::walk_branch(TBranch *branch,
 
 bool root2hdf5::tree::walk::walk_tree(TTree *tree,
                                       branch_processor branch_opener,
-                                      branch_processor branch_closer,
-                                      leaf_processor leaf_handler)
+                                      leaf_processor leaf_handler,
+                                      branch_processor branch_closer)
 {
     // Loop over each branch at the root level of the tree and do its walking
     TIter next_branch(tree->GetListOfBranches());
     TBranch *branch = NULL;
     while((branch = (TBranch *)next_branch()))
     {
-        if(!walk_branch(branch, branch_opener, branch_closer, leaf_handler))
+        if(!walk_branch(branch, branch_opener, leaf_handler, branch_closer))
         {
             return false;
         }

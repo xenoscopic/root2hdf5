@@ -9,6 +9,7 @@ using namespace std;
 
 // root2hdf5 namespaces
 using namespace root2hdf5::tree::leaf_converters;
+using namespace root2hdf5::tree::map_hdf5;
 using namespace root2hdf5::type;
 
 
@@ -24,4 +25,14 @@ string scalar_converter::member_for_conversion_struct(TLeaf *leaf)
     // Specifically:
     //      typename leaf_name;
     return string(leaf->GetTypeName()) + " " + leaf->GetName() + ";";
+}
+
+hid_t scalar_converter::hdf5_type(TLeaf * leaf, 
+                                  vector<hdf5_type_deallocator> & deallocators)
+{
+    // Silence unused variable warnings
+    (void)deallocators;
+
+    // Just return the scalar HDF5 type
+    return root_type_name_to_scalar_hdf5_type(leaf->GetTypeName());
 }

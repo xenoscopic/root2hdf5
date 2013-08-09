@@ -14,6 +14,7 @@
 
 // ROOT includes
 #include <TROOT.h>
+#include <TSystem.h>
 
 // root2hdf5 includes
 #include "options.h"
@@ -30,8 +31,22 @@ using namespace root2hdf5::cint;
 using namespace root2hdf5::options;
 
 
-bool root2hdf5::cint::process_long_line(const string & long_line)
+bool root2hdf5::cint::process_long_line(const string & long_line,
+                                        bool compile)
 {
+    // Set the ACLiC build directory to a temporary directory so we don't
+    // clutter our working directory with ROOT dictionaries
+    static bool build_directory_set = false;
+    static fs::path build_directory;
+    if(!build_directory_set)
+    {
+        // Generate a build directory
+        build_directory = fs::temp_directory_path();
+
+        // Set the build directory path
+        gSystem->SetBuildDir(build_directory.native().c_str());
+    }
+
     // TODO: It might be better to add some more stringent error checking in
     // here, but most of these things are such robust, low-level OS things that
     // if they fail, the user's environment is probably already melting around
@@ -39,8 +54,9 @@ bool root2hdf5::cint::process_long_line(const string & long_line)
     // work.  However, still check LoadMacro's return code, because it is easy
     // and because we can't trust ROOT.
 
-    // Generate a temporary path to write the line to
-    fs::path temp_path = fs::temp_directory_path() 
+    // Generate a temporary path to write the line to, and just throw it in the
+    // build directory to keep things clean.
+    fs::path temp_path = build_directory 
                          / fs::unique_path("%%%%-%%%%-%%%%-%%%%.cpp");
 
     // Write the line to the temporary file.  It is very important that we
@@ -51,18 +67,30 @@ bool root2hdf5::cint::process_long_line(const string & long_line)
     output.close();
 
     // Process the line
-    if(gROOT->LoadMacro((temp_path.native()).c_str()) < 0)
+    bool success = true;
+    if(compile)
     {
-        if(verbose)
+        if(gSystem->CompileMacro(temp_path.native().c_str()) != 1)
         {
-            cerr << "ERROR: Unable to load temporary macro" << endl;
+            success = false;
         }
-
-        return false;
+    }
+    else
+    {
+        if(gROOT->LoadMacro(temp_path.native().c_str()) < 0)
+        {
+            success = false;
+        }
     }
 
-    // Remove the file
+    if(!success && verbose)
+    {
+        cerr << "ERROR: Unable to load temporary macro" << endl;
+    }
+
+    // Remove the file.  I know ROOT won't clean up after itself, but we can at
+    // least clean up after ourselves.
     fs::remove(temp_path);
     
-    return true;
+    return success;
 }

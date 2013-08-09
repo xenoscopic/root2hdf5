@@ -8,6 +8,7 @@
 
 // ROOT includes
 #include <TROOT.h>
+#include <TSystem.h>
 #include <TFile.h>
 
 // HDF5 includes
@@ -33,6 +34,9 @@ int main(int argc, char *argv[])
     // Set ROOT to batch mode so nothing pops up on the screen (not that it
     // should, but you never know with ROOT)
     gROOT->SetBatch(kTRUE);
+
+    // Tell ROOT to do any compilation in a temporary directory
+    gSystem->SetBuildDir(fs::temp_directory_path().native().c_str());
 
     // Parse command line options and create some convenient accessors
     parse_command_line_options(argc, argv);

@@ -132,7 +132,7 @@ bool root2hdf5::tree::convert(TTree *tree,
             return false;
         }
 
-        // TODO: Call the converter
+        // Call the converter
         if(!converter())
         {
             // If the converter failed, it should have printed a message if

@@ -266,7 +266,6 @@ root2hdf5::tree::map_hdf5::hdf5_type_for_tree(TTree *tree)
             // opposite order of how we open them
             if(!(*it)())
             {
-                // TODO: Should we continue if one deallocator fails?
                 return false;
             }
         }

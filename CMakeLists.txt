@@ -13,6 +13,12 @@ project(root2hdf5)
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -std=c++0x -Wall -Wextra -pedantic")
 
+# HACK: Disable specific warnings:
+#   -Wunused-local-typedefs - Has conflicts with Boost
+#   -Wliteral-suffix - Has conflicts with HDF5
+set(CMAKE_CXX_FLAGS
+    "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs -Wno-literal-suffix")
+
 # Add extra CMake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake)
 

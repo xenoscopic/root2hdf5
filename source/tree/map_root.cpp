@@ -146,7 +146,6 @@ root2hdf5::tree::map_root::map_root_tree_into_struct_and_build_converter(
             {
                 if(!(*it)())
                 {
-                    // TODO: Should we continue if one deallocator fails?
                     return false;
                 }
             }

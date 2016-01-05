@@ -1,18 +1,23 @@
-root2hdf5
-=========
-Liberate your data from the monstrosity which is ROOT.
+# root2hdf5
+
+Liberate your data from the monstrosity that *is* ROOT.
+
+This tool is currently incomplete.  Unfortunately the ROOT file format is so
+inextricably linked to C++ data structures and semantics that I doubt a flawless
+conversion is possible.  Most scalar branch types are supported however, so for
+flat ntuples this tool might be useful.
 
 
-Requirements
-------------
+## Requirements
+
 - CMake (for building) 2.8.3+
 - Boost 1.50.0+
 - ROOT (any relatively recent version)
 - HDF5 1.8+
 
 
-Acknowledgements
-----------------
+## Acknowledgements
+
 FindROOT.cmake used under LGPL license from the ROOT source code:
 
     Copyright (C) 2013 CERN
